@@ -1,4 +1,8 @@
-import { LinksFunction, MetaFunction } from "@remix-run/node";
+import {
+  LinksFunction,
+  LoaderFunctionArgs,
+  MetaFunction,
+} from "@remix-run/node";
 import {
   Link,
   Links,
@@ -6,11 +10,17 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  json,
+  useLoaderData,
 } from "@remix-run/react";
 import { ArrowRightLeft, Menu } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "~/components/ui/sheet";
 import stylesheet from "~/tailwind.css?url";
+import { getToast } from "remix-toast";
+import { useEffect } from "react";
+import { useToast } from "~/components/ui/use-toast";
+import { Toaster } from "~/components/ui/toaster";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: stylesheet },
@@ -23,7 +33,25 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { toast, headers } = await getToast(request);
+  return json({ toast }, { headers });
+};
+
 export function Layout({ children }: { children: React.ReactNode }) {
+  const { toast: loaderToast } = useLoaderData<typeof loader>();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (loaderToast) {
+      toast({
+        variant: "default",
+        title: "Error",
+        description: loaderToast.message,
+      });
+    }
+  }, [loaderToast]);
+
   return (
     <html lang="en">
       <head>
@@ -36,6 +64,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
         <ScrollRestoration />
         <Scripts />
+        <Toaster />
       </body>
     </html>
   );
@@ -81,7 +110,10 @@ export default function App() {
       <main className="flex min-h-[calc(100vh_-_theme(spacing.16))] flex-1 flex-col gap-4 bg-muted/40 p-4 md:gap-8 md:p-10">
         <div className="mx-auto grid w-full max-w-6xl gap-2">
           <h1 className="text-3xl font-semibold">Groq Llama3 Translate</h1>
-          <p>Please use small text it&apos;s just a demo with a free tier groq service</p>
+          <p>
+            Please use small text it&apos;s just a demo with a free tier groq
+            service
+          </p>
         </div>
         <div className="mx-auto grid w-full max-w-6xl items-start gap-6">
           <Outlet />

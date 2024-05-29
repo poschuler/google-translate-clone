@@ -1,8 +1,13 @@
-import { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json, useFetcher, useLoaderData } from "@remix-run/react";
+import { LoaderFunctionArgs } from "@remix-run/node";
+import {
+  Form,
+  useLoaderData,
+  useNavigation,
+  useSearchParams,
+  useSubmit,
+} from "@remix-run/react";
 import { ArrowRightLeft, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useDebounceValue } from "usehooks-ts";
+import { useDebounceCallback } from "usehooks-ts";
 import { z } from "zod";
 import { Button } from "~/components/ui/button";
 import {
@@ -22,24 +27,28 @@ import { Textarea } from "~/components/ui/textarea";
 import {
   LanguageInput,
   LanguageOutput,
-  LanguageOutputId,
   getSupportedInputLanguages,
   getSupportedOutputLanguages,
 } from "~/types/language.type";
-import { parseWithZod } from "@conform-to/zod";
-import { translateText } from "~/models/translate.server";
 import clsx from "clsx";
+import { parseWithZod } from "@conform-to/zod";
+import { jsonWithError, redirectWithError } from "remix-toast";
+import { translateText } from "~/models/translate.server";
+import { useEffect, useState } from "react";
 
 type LoaderData = {
   supportedInputLanguages: Array<LanguageInput>;
   supportedOutputLanguages: Array<LanguageOutput>;
-  defaultOutputLanguage: LanguageOutputId;
+  outputText: string;
 };
 
-const translateSchema = z.object({
+const languageSchema = z.object({
   inputLanguage: z.enum(["auto", "en", "es", "de"]),
   outputLanguage: z.enum(["en", "es", "de"]),
-  text: z
+});
+
+const translateTextSchema = z.object({
+  inputText: z
     .string({ required_error: "Provide a text" })
     .min(3, "Provide a text at least of 3 characters")
     .max(50, "Provide a text at max of 50 characters"),
@@ -48,108 +57,103 @@ const translateSchema = z.object({
 export async function loader({ request }: LoaderFunctionArgs) {
   const supportedInputLanguages = getSupportedInputLanguages();
   const supportedOutputLanguages = getSupportedOutputLanguages();
+  const searchParams = new URL(request.url).searchParams;
+
+  const submissionTranslateText = await parseWithZod(searchParams, {
+    schema: translateTextSchema,
+  });
+
+  if (submissionTranslateText.status !== "success") {
+    return {
+      supportedInputLanguages,
+      supportedOutputLanguages,
+      outputText: "",
+    };
+  }
+
+  const submissionLanguage = await parseWithZod(searchParams, {
+    schema: languageSchema,
+  });
+
+  if (submissionLanguage.status !== "success") {
+    return redirectWithError("/", "Invalid search params");
+  }
+
+  const outputText = await translateText(
+    submissionLanguage.value.inputLanguage,
+    submissionLanguage.value.outputLanguage,
+    submissionTranslateText.value.inputText
+  );
 
   return {
     supportedInputLanguages,
     supportedOutputLanguages,
-    defaultOutputLanguage: supportedOutputLanguages[0].id,
+    outputText: outputText ?? "",
   };
 }
 
-export async function action({ request }: ActionFunctionArgs) {
-  const formData = await request.formData();
-  const submission = parseWithZod(formData, { schema: translateSchema });
-
-  if (submission.status !== "success") {
-    return json(submission.reply());
-  }
-
-  const outputText = await translateText(
-    submission.value.inputLanguage,
-    submission.value.outputLanguage,
-    submission.value.text
-  );
-
-  return json({ outputText });
-}
-
 export default function Index() {
-  const {
-    defaultOutputLanguage,
-    supportedInputLanguages,
-    supportedOutputLanguages,
-  } = useLoaderData<LoaderData>();
+  const { supportedInputLanguages, supportedOutputLanguages, outputText } =
+    useLoaderData<LoaderData>();
+  const [searchParams] = useSearchParams();
+  const inputText = searchParams.get("inputText") ?? "";
+  const inputLanguage = searchParams.get("inputLanguage") ?? "auto";
+  const outputLanguage = searchParams.get("outputLanguage") ?? "en";
 
-  const translateFetcher = useFetcher<typeof action>();
-  const [selectedInputLanguage, setSelectedInputLanguage] =
-    useState<string>("auto");
-  const [selectedOutputLanguage, setSelectedOutputLanguage] = useState<string>(
-    defaultOutputLanguage
-  );
-
-  const [inputText, setInputText] = useState<string>("");
-  const [debouncedInputText, setDebouncedInputText] = useDebounceValue(
-    inputText,
-    500
-  );
-
-  const [outputText, setOutputText] = useState("");
+  const [inputTextState, setInputTextState] = useState(inputText);
+  const [inputLanguageState, setInputLanguageState] = useState(inputLanguage);
+  const [outputLanguageState, setOutputLanguageState] =
+    useState(outputLanguage);
 
   useEffect(() => {
-    setDebouncedInputText(inputText);
-  }, [inputText, setDebouncedInputText]);
+    setOutputLanguageState(outputLanguage);
+  }, [outputLanguage]);
 
   useEffect(() => {
-    if (
-      translateFetcher.state === "idle" &&
-      translateFetcher.data?.outputText
-    ) {
-      setOutputText(translateFetcher.data.outputText);
-    }
-  }, [translateFetcher]);
+    setInputLanguageState(inputLanguage);
+  }, [inputLanguage]);
 
   useEffect(() => {
-    translateFetcher.submit(
-      {
-        _action: "translate",
-        inputLanguage: selectedInputLanguage,
-        outputLanguage: selectedOutputLanguage,
-        text: debouncedInputText,
-      },
-      {
-        method: "POST",
-      }
-    );
-  }, [selectedInputLanguage, selectedOutputLanguage, debouncedInputText]);
+    setInputTextState(inputText);
+  }, [inputText]);
 
   const handleSwapLanguages = (
     e: React.MouseEvent<HTMLButtonElement, MouseEvent>
   ) => {
     e.preventDefault();
-    const temp = selectedInputLanguage;
-    setSelectedInputLanguage(selectedOutputLanguage);
-    setSelectedOutputLanguage(temp);
-
-    const tempText = debouncedInputText;
-    setInputText(outputText);
-    setOutputText(tempText);
+    const inputTemp = inputLanguageState;
+    setInputLanguageState(outputLanguageState);
+    setOutputLanguageState(inputTemp);
+    setInputTextState(outputText);
   };
 
-  const isTranslating = translateFetcher.state !== "idle";
+  const navigation = useNavigation();
+  const submit = useSubmit();
+  const debouncedSubmit = useDebounceCallback(submit, 500);
+
+  const isTranslating = navigation.state !== "idle";
+
+  const handleChangeForm = (e: React.FormEvent<HTMLFormElement>) => {
+    const target = e.target;
+
+    if (target instanceof HTMLTextAreaElement) {
+      debouncedSubmit(e.currentTarget);
+    } else {
+      submit(e.currentTarget);
+    }
+  };
 
   return (
-    <translateFetcher.Form
+    <Form
       className="flex flex-col gap-4 items-center md:flex-row md:gap-4 md:items-center"
-      method="post"
+      onChange={handleChangeForm}
     >
       <Card className="w-full">
         <CardHeader>
           <Select
-            name="inputText"
-            value={selectedInputLanguage}
-            onValueChange={(e) => {
-              setSelectedInputLanguage(e);
-            }}
+            name="inputLanguage"
+            value={inputLanguageState}
+            onValueChange={(value) => setInputLanguageState(value)}
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />
@@ -169,11 +173,9 @@ export default function Index() {
             placeholder="Write something"
             className="resize-none"
             name="inputText"
-            value={inputText}
+            value={inputTextState}
+            onChange={(e) => setInputTextState(e.target.value)}
             required
-            onChange={(e) => {
-              setInputText(e.target.value);
-            }}
           />
         </CardContent>
       </Card>
@@ -193,9 +195,9 @@ export default function Index() {
           variant={"default"}
           onClick={handleSwapLanguages}
           disabled={
-            selectedInputLanguage === "auto" ||
+            inputLanguage === "auto" ||
             isTranslating ||
-            selectedInputLanguage === selectedOutputLanguage
+            inputLanguage === outputLanguage
           }
         >
           <ArrowRightLeft />
@@ -206,10 +208,8 @@ export default function Index() {
         <CardHeader>
           <Select
             name="outputLanguage"
-            value={selectedOutputLanguage}
-            onValueChange={(e) => {
-              setSelectedOutputLanguage(e);
-            }}
+            value={outputLanguageState}
+            onValueChange={(value) => setOutputLanguageState(value)}
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />
@@ -229,10 +229,10 @@ export default function Index() {
             className="resize-none"
             placeholder="Translated text"
             readOnly={true}
-            value={isTranslating ? "Translating" : outputText}
+            value={isTranslating ? "Translating..." : outputText}
           />
         </CardContent>
       </Card>
-    </translateFetcher.Form>
+    </Form>
   );
 }
