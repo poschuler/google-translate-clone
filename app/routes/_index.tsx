@@ -133,12 +133,10 @@ export default function Index() {
   const handleChangeForm = (e: React.FormEvent<HTMLFormElement>) => {
     const target = e.target;
 
-    if (target instanceof HTMLTextAreaElement) {
-      if (inputText.length > 3) {
+    if (inputText.length > 3) {
+      if (target instanceof HTMLTextAreaElement) {
         debouncedSubmit(e.currentTarget);
-      }
-    } else {
-      if (inputText.length > 3) {
+      } else {
         submit(e.currentTarget);
       }
     }
