@@ -26,25 +26,28 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import {
   LanguageInput,
+  LanguageInputId,
   LanguageOutput,
+  LanguageOutputId,
   getSupportedInputLanguages,
   getSupportedOutputLanguages,
 } from "~/types/language.type";
 import clsx from "clsx";
 import { parseWithZod } from "@conform-to/zod";
-import { redirectWithError } from "remix-toast";
 import { translateText } from "~/models/translate.server";
 import { useEffect, useState } from "react";
 
 type LoaderData = {
   supportedInputLanguages: Array<LanguageInput>;
   supportedOutputLanguages: Array<LanguageOutput>;
+  inputLanguage: LanguageInputId;
+  outputLanguage: LanguageOutputId;
   outputText: string;
 };
 
 const languageSchema = z.object({
-  inputLanguage: z.enum(["auto", "en", "es", "de"]),
-  outputLanguage: z.enum(["en", "es", "de"]),
+  inputLanguage: z.enum(["auto", "en", "es", "de"]).default("auto"),
+  outputLanguage: z.enum(["en", "es", "de"]).default("en"),
 });
 
 const translateTextSchema = z.object({
@@ -59,6 +62,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const supportedOutputLanguages = getSupportedOutputLanguages();
   const searchParams = new URL(request.url).searchParams;
 
+  const submissionLanguage = await parseWithZod(searchParams, {
+    schema: languageSchema,
+  });
+
+  if (submissionLanguage.status !== "success") {
+    throw new Error("Invalid search params, never reach here");
+  }
+
+  const inputLanguage = submissionLanguage.value.inputLanguage;
+  const outputLanguage = submissionLanguage.value.outputLanguage;
+
   const submissionTranslateText = await parseWithZod(searchParams, {
     schema: translateTextSchema,
   });
@@ -67,63 +81,48 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return {
       supportedInputLanguages,
       supportedOutputLanguages,
+      inputLanguage,
+      outputLanguage,
       outputText: "",
     };
   }
 
-  const submissionLanguage = await parseWithZod(searchParams, {
-    schema: languageSchema,
-  });
-
-  if (submissionLanguage.status !== "success") {
-    return redirectWithError("/", "Invalid search params");
-  }
-
   const outputText = await translateText(
-    submissionLanguage.value.inputLanguage,
-    submissionLanguage.value.outputLanguage,
+    inputLanguage,
+    outputLanguage,
     submissionTranslateText.value.inputText
   );
 
   return {
     supportedInputLanguages,
     supportedOutputLanguages,
-    outputText: outputText ?? "",
+    inputLanguage,
+    outputLanguage,
+    outputText: outputText,
   };
 }
 
 export default function Index() {
-  const { supportedInputLanguages, supportedOutputLanguages, outputText } =
-    useLoaderData<LoaderData>();
+  const {
+    supportedInputLanguages,
+    supportedOutputLanguages,
+    outputText,
+    inputLanguage: inputLanguageLoader,
+    outputLanguage: outputLanguageLoader,
+  } = useLoaderData<LoaderData>();
   const [searchParams] = useSearchParams();
 
   const [inputText, setInputText] = useState(
     searchParams.get("inputText") ?? ""
   );
-  const [inputLanguage, setInputLanguage] = useState(
-    searchParams.get("inputLanguage") ?? "auto"
-  );
-  const [outputLanguage, setOutputLanguage] = useState(
-    searchParams.get("outputLanguage") ?? "en"
-  );
+
+  const [inputLanguage, setInputLanguage] = useState(inputLanguageLoader);
+  const [outputLanguage, setOutputLanguage] = useState(outputLanguageLoader);
 
   useEffect(() => {
-    const inputLanguage = searchParams.get("inputLanguage") ?? "auto";
-    const outputLanguage = searchParams.get("outputLanguage") ?? "en";
-
-    setOutputLanguage(outputLanguage);
-    setInputLanguage(inputLanguage);
-  }, [searchParams]);
-
-  const handleSwapLanguages = (
-    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-  ) => {
-    e.preventDefault();
-    const inputTemp = inputLanguage;
-    setInputLanguage(outputLanguage);
-    setOutputLanguage(inputTemp);
-    setInputText(outputText);
-  };
+    setInputLanguage(inputLanguageLoader);
+    setOutputLanguage(outputLanguageLoader);
+  }, [inputLanguageLoader, outputLanguageLoader]);
 
   const navigation = useNavigation();
   const submit = useSubmit();
@@ -145,17 +144,39 @@ export default function Index() {
     }
   };
 
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    setOutputLanguage(inputLanguage as LanguageOutputId);
+    setInputLanguage(outputLanguage);
+    setInputText(outputText);
+
+    submit(
+      {
+        inputLanguage: outputLanguage,
+        outputLanguage: inputLanguage,
+        inputText: outputText,
+      },
+      {
+        method: "get",
+      }
+    );
+  };
+
   return (
     <Form
       className="flex flex-col gap-4 items-center md:flex-row md:gap-4 md:items-center"
       onChange={handleChangeForm}
+      onSubmit={handleSubmit}
     >
       <Card className="w-full">
         <CardHeader>
           <Select
             name="inputLanguage"
             value={inputLanguage}
-            onValueChange={(value) => setInputLanguage(value)}
+            onValueChange={(value) =>
+              setInputLanguage(value as LanguageInputId)
+            }
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />
@@ -195,7 +216,7 @@ export default function Index() {
         <Button
           size={"icon"}
           variant={"default"}
-          onClick={handleSwapLanguages}
+          type="submit"
           disabled={
             inputLanguage === "auto" ||
             isTranslating ||
@@ -211,7 +232,9 @@ export default function Index() {
           <Select
             name="outputLanguage"
             value={outputLanguage}
-            onValueChange={(value) => setOutputLanguage(value)}
+            onValueChange={(value) =>
+              setOutputLanguage(value as LanguageOutputId)
+            }
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />

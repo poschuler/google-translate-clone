@@ -21,8 +21,6 @@ export async function translateText(
     return inputText;
   }
 
-  //return "no response";
-
   const groq = new Groq({
     apiKey: GROQ_API_KEY,
   });
@@ -75,7 +73,7 @@ export async function translateText(
       model: "llama3-70b-8192",
     });
 
-    return result.choices[0].message.content;
+    return result.choices[0].message.content || "";
   } catch (error) {
     return "Error translating text";
   }
