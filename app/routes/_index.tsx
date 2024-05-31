@@ -51,7 +51,7 @@ const translateTextSchema = z.object({
   inputText: z
     .string({ required_error: "Provide a text" })
     .min(3, "Provide a text at least of 3 characters")
-    .max(50, "Provide a text at max of 50 characters"),
+    .max(200, "Provide a text at max of 50 characters"),
 });
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -96,35 +96,33 @@ export default function Index() {
   const { supportedInputLanguages, supportedOutputLanguages, outputText } =
     useLoaderData<LoaderData>();
   const [searchParams] = useSearchParams();
-  const inputText = searchParams.get("inputText") ?? "";
-  const inputLanguage = searchParams.get("inputLanguage") ?? "auto";
-  const outputLanguage = searchParams.get("outputLanguage") ?? "en";
 
-  const [inputTextState, setInputTextState] = useState(inputText);
-  const [inputLanguageState, setInputLanguageState] = useState(inputLanguage);
-  const [outputLanguageState, setOutputLanguageState] =
-    useState(outputLanguage);
-
-  useEffect(() => {
-    setOutputLanguageState(outputLanguage);
-  }, [outputLanguage]);
+  const [inputText, setInputText] = useState(
+    searchParams.get("inputText") ?? ""
+  );
+  const [inputLanguage, setInputLanguage] = useState(
+    searchParams.get("inputLanguage") ?? "auto"
+  );
+  const [outputLanguage, setOutputLanguage] = useState(
+    searchParams.get("outputLanguage") ?? "en"
+  );
 
   useEffect(() => {
-    setInputLanguageState(inputLanguage);
-  }, [inputLanguage]);
+    const inputLanguage = searchParams.get("inputLanguage") ?? "auto";
+    const outputLanguage = searchParams.get("outputLanguage") ?? "en";
 
-  useEffect(() => {
-    setInputTextState(inputText);
-  }, [inputText]);
+    setOutputLanguage(outputLanguage);
+    setInputLanguage(inputLanguage);
+  }, [searchParams]);
 
   const handleSwapLanguages = (
     e: React.MouseEvent<HTMLButtonElement, MouseEvent>
   ) => {
     e.preventDefault();
-    const inputTemp = inputLanguageState;
-    setInputLanguageState(outputLanguageState);
-    setOutputLanguageState(inputTemp);
-    setInputTextState(outputText);
+    const inputTemp = inputLanguage;
+    setInputLanguage(outputLanguage);
+    setOutputLanguage(inputTemp);
+    setInputText(outputText);
   };
 
   const navigation = useNavigation();
@@ -137,9 +135,13 @@ export default function Index() {
     const target = e.target;
 
     if (target instanceof HTMLTextAreaElement) {
-      debouncedSubmit(e.currentTarget);
+      if (inputText.length > 3) {
+        debouncedSubmit(e.currentTarget);
+      }
     } else {
-      submit(e.currentTarget);
+      if (inputText.length > 3) {
+        submit(e.currentTarget);
+      }
     }
   };
 
@@ -152,8 +154,8 @@ export default function Index() {
         <CardHeader>
           <Select
             name="inputLanguage"
-            value={inputLanguageState}
-            onValueChange={(value) => setInputLanguageState(value)}
+            value={inputLanguage}
+            onValueChange={(value) => setInputLanguage(value)}
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />
@@ -173,8 +175,8 @@ export default function Index() {
             placeholder="Write something"
             className="resize-none"
             name="inputText"
-            value={inputTextState}
-            onChange={(e) => setInputTextState(e.target.value)}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
             required
           />
         </CardContent>
@@ -208,8 +210,8 @@ export default function Index() {
         <CardHeader>
           <Select
             name="outputLanguage"
-            value={outputLanguageState}
-            onValueChange={(value) => setOutputLanguageState(value)}
+            value={outputLanguage}
+            onValueChange={(value) => setOutputLanguage(value)}
           >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Language" />
