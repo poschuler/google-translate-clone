@@ -70,7 +70,7 @@ export async function translateText(
           content: `${inputText} {{${fromLanguage}}} [[${toLanguage}]]`,
         },
       ],
-      model: "llama3-70b-8192",
+      model: "llama-3.3-70b-versatile",
     });
 
     return result.choices[0].message.content || "";
